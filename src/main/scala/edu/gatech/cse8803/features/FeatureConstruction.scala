@@ -4,11 +4,13 @@
 package edu.gatech.cse8803.features
 
 import breeze.linalg.max
+import edu.gatech.cse8803.ioutils.CSVUtils
 import edu.gatech.cse8803.model.{PatientInfo, LabResult, Medication, Diagnostic}
 import org.apache.spark.SparkContext
 import org.apache.spark.mllib.linalg.{Vector, Vectors}
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.SQLContext
 
 
 object FeatureConstruction {
@@ -81,9 +83,17 @@ object FeatureConstruction {
     /** save for later usage */
     feature.cache()
     val trueset=feature.filter(f => anchorDictSet.contains(f._2)).map(_._1).collect().toSet
+    //--------------------
+    val sqlContext=new SQLContext(sc)
+
+    /*val data=CSVUtils.loadCSVAsTable(sqlContext,"data/patients_tab.csv","sTable")
+    val RDDrowmed= sqlContext.sql("SELECT subject_id as patientID, expire_flag AS death  FROM sTable")
+    val trueset:Set[String]=RDDrowmed.map(p=>(p(0),p(1))).filter(_._2=="1").map(_._1.toString).collect().toSet*/
+
+    //-----------------------------------------------
     println("trueset")
     println(trueset.size)
-    //sc.parallelize(trueset.toList).repartition(1).saveAsTextFile("PatientSet")
+    //feature.map(_._1).distinct().map(f => {if (trueset.contains(f)) (f,1) else (f,0)}).repartition(1).saveAsTextFile("PatientSet")
     if (trueset.size==0) return (sc.emptyRDD,Map[String,Long](""->0L))
     println("passed")
     val restfeature=feature.filter(f => !anchorDictSet.contains(f._2))
