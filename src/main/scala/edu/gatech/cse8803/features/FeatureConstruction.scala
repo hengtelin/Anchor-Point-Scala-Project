@@ -28,10 +28,7 @@ object FeatureConstruction {
    * @return RDD of feature tuples
    */
   def constructDiagnosticFeatureTuple(diagnostic: RDD[Diagnostic]): RDD[FeatureTuple] = {
-    /**
-     * TODO implement your own code here and remove existing
-     * placeholder code
-     */
+
     diagnostic.map(f => (f.patientID,f.code,1.0)).distinct()
 
   }
@@ -43,10 +40,7 @@ object FeatureConstruction {
    * @return RDD of feature tuples
    */
   def constructMedicationFeatureTuple(medication: RDD[Medication]): RDD[FeatureTuple] = {
-    /**
-     * TODO implement your own code here and remove existing
-     * placeholder code
-     */
+
     medication.map(f => (f.patientID,f.medicine,1.0) ).distinct()
   }
 
@@ -57,10 +51,7 @@ object FeatureConstruction {
    * @return RDD of feature tuples
    */
   def constructAgeFeatureTuple(patientResult: RDD[PatientInfo]): RDD[FeatureTuple] = {
-    /**
-     * TODO implement your own code here and remove existing
-     * placeholder code
-     */
+
     patientResult.map(f =>(f.patientID,"Age",f.age.toDouble)).keyBy(_._1).reduceByKey((f1,f2)=> (f1._1,f2._2,max(f1._3,f2._3))).map(_._2)
   }
   def constructGenderFeatureTuple(patientResult: RDD[PatientInfo]): RDD[FeatureTuple] ={
@@ -83,16 +74,10 @@ object FeatureConstruction {
     /** save for later usage */
     feature.cache()
     val trueset=feature.filter(f => anchorDictSet.contains(f._2)).map(_._1).collect().toSet
-    //--------------------
     val sqlContext=new SQLContext(sc)
 
-    /*val data=CSVUtils.loadCSVAsTable(sqlContext,"data/patients_tab.csv","sTable")
-    val RDDrowmed= sqlContext.sql("SELECT subject_id as patientID, expire_flag AS death  FROM sTable")
-    val trueset:Set[String]=RDDrowmed.map(p=>(p(0),p(1))).filter(_._2=="1").map(_._1.toString).collect().toSet*/
-
-    //-----------------------------------------------
-    println("trueset")
-    println(trueset.size)
+    //println("trueset")
+    //println(trueset.size)
     //feature.map(_._1).distinct().map(f => {if (trueset.contains(f)) (f,1) else (f,0)}).repartition(1).saveAsTextFile("PatientSet")
     if (trueset.size==0) return (sc.emptyRDD,Map[String,Long](""->0L))
     println("passed")
@@ -102,8 +87,6 @@ object FeatureConstruction {
 
     val bidmap=sc.broadcast(idmap)
     val idnum=bidmap.value.size
-
-
     /** transform input feature */
     val result=restfeature
       .map(f => (f._1,bidmap.value(f._2),f._3) )

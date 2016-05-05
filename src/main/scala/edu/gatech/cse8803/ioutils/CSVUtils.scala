@@ -41,18 +41,6 @@ object CSVUtils {
         case Array(b:String,c:String,d:String,_*)  => (b.toString, c.toString, d.toDouble)
         case a => ("Nan", "Nan", 0.0)
       }
-    //rawdata.filter(_._2.size==3).map(_._2).distinct().take(20).foreach(println)
-    //rawdata.take(1)(0).foreach(println)
-    //rawdata.map(f => f.).distinct().take(50).foreach(println)
-    /*rawdata.filter(_.size==8).take(50).foreach{
-      println()
-      _.foreach{
-        print("(")
-        print(_)
-
-      }
-    }*/
-    //(rawdata.take(10)).foreach(println)
 
     rawdata
   }

@@ -5,21 +5,25 @@
 package edu.gatech.cse8803.main
 
 import java.text.SimpleDateFormat
-
-
 import edu.gatech.cse8803.features.FeatureConstruction
 import edu.gatech.cse8803.ioutils.CSVUtils
 import edu.gatech.cse8803.model.{PatientInfo, Diagnostic, Medication}
-import org.apache.spark.mllib.classification.{LogisticRegressionWithLBFGS}
-import org.apache.spark.mllib.evaluation.{BinaryClassificationMetrics, MulticlassMetrics}
+import org.apache.spark.ml.classification.{LogisticRegressionModel, LogisticRegression}
+import org.apache.spark.ml.evaluation.BinaryClassificationEvaluator
+import org.apache.spark.mllib.classification.{LogisticRegressionWithSGD, LogisticRegressionWithLBFGS}
+import org.apache.spark.mllib.evaluation.{BinaryClassificationMetrics}
+import org.apache.spark.ml.tuning.{ParamGridBuilder, CrossValidator}
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SQLContext
+import org.apache.spark.sql.{Row, SQLContext}
 import org.apache.spark.{SparkConf, SparkContext}
 
 
 
+/**This is the main class of the program */
 object Main {
+  /** Main method
+    * the main method reads in data and then calls learnfrommap method to learn the pattern */
   def main(args: Array[String]) {
     import org.apache.log4j.Logger
     import org.apache.log4j.Level
@@ -30,7 +34,10 @@ object Main {
     val sc = createContext
     val sqlContext = new SQLContext(sc)
 
-    println(new java.io.File("data/data").exists)
+    //println(new java.io.File("data/data").exists)
+    /** preparation of data
+      * Since the same data will be used for different phenotypes, some preparations that are identical to all
+      * phenotypes are done first. The intermediate file is saved in data/data */
     if (! new java.io.File("data/data").exists) {
       /** initialize loading of data */
       val (medication, patientResult, diagnostic) = loadRddRawData(sqlContext)
@@ -44,23 +51,24 @@ object Main {
       CSVUtils.saveFeatureToLocal(featureTuples)
     }
 
-
-
-
-    //--------------------------------------------------------------------------
-/*    val loadedfeaturetuple=CSVUtils.readFeatureFromLocal(sc,"data/data")
-    var pSet=Set("391","391.9","392","394","395","396","397","398","401","401.0","401.1","401.9","402","403","403.0","403.1","404","405","405.0","405.01","405.1","405.11","410","410.0","410.1","410.2","410.3","410.4","410.5","410.6","410.7","410.8","410.9","411","411.0","411.1","412","413","413.0","413.1","414","414.0","414.1","414.10","414.11","414.12","414.8","414.9","415","415.0","415.1","415.11","415.12","415.19","416","416.0","416.1","416.2","416.8","416.9","417","417.0","417.1","417.8","417.9","420","420.9","420.91","421","421.0","422","422.9","422.91","423","424","424.0","424.1","424.2","424.3","425","425.0","425.1","425.2","425.3","425.4","425.5","425.7","425.8","425.9","426","426.0","426.11","426.12","426.13","426.3","426.4","426.6","426.7","427","427.0","427.3","427.31","427.32","427.4","427.41","427.5","427.6","427.8","427.81","427.89","427.9","428","428.0","428.1","428.2","428.3","428.4","429","429.0","429.1","429.2","429.3","429.4","429.5","429.6","429.7","429.71","429.79","429.8","429.81","429.82","429.83","429.89","429.9","430","431","432","432.9","433","433.0","433.1","433.2","434","434.0","434.00","434.01","434.1","434.10","434.11","435","435.0","435.1","435.2","435.3","435.9","436","437","437.0","437.1","437.2","437.3","437.4","437.5","437.6","437.7","438","438.0","438.1","438.10","438.11","438.12","438.19","438.2","438.20","438.21","438.22","438.3","438.4","438.5","438.8","438.81","438.82","438.83","438.84","438.85","438.9","440","440.1","440.2","440.21","440.23","441","441.0","441.3","441.4","441.9","442","443","443.0","443.1","443.2","443.21","443.22","443.23","443.24","443.29","443.8","443.82","443.9","444","445","446","446.1","446.5","447","447.0","448","449","451","451.1","451.11","451.19","451.8","451.82","451.9","452","453","453.4","453.41","453.42","453.9","454","454.0","454.1","454.2","454.9","455","455.0","455.2","455.3","455.4","455.6","456","456.0","456.1","456.4","457","457.0","458","458.0","458.2","459","459.8","459.81")
-
-    FeatureConstruction.construct(sc, loadedfeaturetuple, pSet)
-    return 0*/
-    /** feature construction with all features */
-
+    /** read the anchor point dictionary and intermediate data features */
     val anchorDict= phenotypehasmap
     val loadedfeaturetuple=CSVUtils.readFeatureFromLocal(sc,"data/data")
+    /** call the learnFromMap method to learn the pattern*/
     learnFromMap(sc,loadedfeaturetuple,anchorDict)
 
   }
+  /**
+    * Label patients using anchors and train classifiers. Outcomes are saved in data/output
+    *
+    * @param sc SparkContext to run
+    * @param loadedfeaturetuple RDD of feature tuples (Patient,Feature,Value) read from intermediate file
+    * @param anchorDict Dictionary(Hashmap) of the anchors points relate to each phenotypes
+    * @param phenotype (optional) the phenotype that need to be learned. leave blank to learn all phenotypes
+    * @return
+    * */
   def learnFromMap(sc: SparkContext,loadedfeaturetuple:RDD[(String,String,Double)],anchorDict:Map[String,Set[String]],phenotype:String=""):Unit={
+    /** generate a list of (phenotype,anchor) tuples to be looped*/
     val phenotypePair:List[(String,Set[String])]={
       if (phenotype.equals("")){
         anchorDict.toList
@@ -68,10 +76,16 @@ object Main {
         List((phenotype,anchorDict(phenotype)))
       }
     }
+    /** coefficients and AUC score will be added into the list during loop*/
     var totalCoefficient: List[(String, String, Double)] = List[(String, String, Double)]()
+    /** loop through all desired phenotype for labeling and learning*/
     for ((phenotype, pSet) <- phenotypePair) {
-      println(phenotype)
+      //println(phenotype)
+      /** call FeatureConstruction.construct to label patient and generate the learning input*/
       val rawFeatures = FeatureConstruction.construct(sc, loadedfeaturetuple, pSet)
+
+      /** Call the trainLogistic method to train a classifier based on the labeled data
+        * If no patient is identified by the anchor, output "Nan" and 0.0 instead*/
       val coefficient: List[(String, String, Double)] = {
         if (rawFeatures._1.isEmpty) List((phenotype, "Nan", 0.0))
         else trainLogistic(rawFeatures._1, rawFeatures._2).map { case (a: String, b: Double) => (phenotype, a, b) }
@@ -80,10 +94,14 @@ object Main {
       totalCoefficient = totalCoefficient ::: coefficient
 
     }
+    /** output the outcome*/
     sc.parallelize(totalCoefficient).saveAsTextFile("data/output")
 
   }
-
+  /** Load raw data that generated by SQL and output as RDD
+    *
+    * @return RDDs of data stored in form of case class
+    * */
   def loadRddRawData(sqlContext: SQLContext): (RDD[Medication], RDD[PatientInfo], RDD[Diagnostic]) = {
 
     val dateFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssX")
@@ -92,7 +110,7 @@ object Main {
     val diagnosedata=CSVUtils.loadCSVAsTable(sqlContext,"data/diagnostics.csv","DiagTable")
     val admissiondata=CSVUtils.loadCSVAsTable(sqlContext,"data/admissions.csv","AdTable")
 
-
+    /** process using SparkSQL */
     val RDDrowmed= sqlContext.sql("SELECT subject_id as patientID, drug AS medicine  FROM MedicationTable")
     val RDDrowdiag= sqlContext.sql("SELECT subject_id as patientID, icd9_code AS code  FROM DiagTable")
     val RDDpatient= sqlContext.sql("SELECT t.subject_id as patientID,  t.gender,DATEDIFF(a.admittime,t.dob) as age, a.admittime, t.dob FROM IDTable t INNER JOIN AdTable a ON t.subject_id = a.subject_id")
@@ -105,7 +123,9 @@ object Main {
 
 
 
-
+  /**
+  * Create Spark Context
+  * */
   def createContext(appName: String, masterUrl: String): SparkContext = {
     val conf = new SparkConf().setAppName(appName).setMaster(masterUrl)
     new SparkContext(conf)
@@ -115,7 +135,11 @@ object Main {
 
   def createContext: SparkContext = createContext("CSE 8803 Application", "local")
 
-
+  /**
+    * Anchor Point features for all phenotypes
+    *
+    * @return HashMap contains (phenotype, feature tuple) pair
+    * */
   def phenotypehasmap:Map[String,Set[String]]={
     Map(
       "Alcoholism" -> Set("303","305.00","305.01","305.02"),
@@ -186,34 +210,73 @@ object Main {
         "458.0","458.2","459","459.8","459.81")
     )
   }
-
+  /**
+    * Train logistic regression using the given labeled data and evaluate it
+    *
+    * @param patientrdd RDD of labeled data points
+    * @param IDMap A map that maps feature id and feature name.
+    * @return a list of features with highest weight, plus the AUC score.
+    * */
   def trainLogistic(patientrdd: RDD[LabeledPoint],IDMap: scala.collection.Map[String, Long]): List[(String,Double)] ={
     //patientrdd.cache()
+
     val split = patientrdd.randomSplit(Array(0.9,0.1))
     val training = split(0).cache()
     val test = split(1)
     val model = new LogisticRegressionWithLBFGS()
       .setNumClasses(2)
-      .run(training)
-
+        .run(training)
     val predictionAndLabels = test.map { case LabeledPoint(label, features) =>
       val prediction = model.predict(features)
       (prediction, label)
     }
-
     // Get evaluation metrics.
     val metrics = new BinaryClassificationMetrics(predictionAndLabels)
-
     val AUC = metrics.areaUnderROC()
-    /*val fScore=metrics.fMeasureByThreshold
-    fScore.foreach{
-      case (t, f) =>
-        println(s"Threshold: $t, F-score: $f, Beta = 1")
-    }*/
-
-
     val coefficients=model.weights.toArray.zipWithIndex.sortBy(_._1).reverse.take(20).map(f => (IDMap.find(x=> x._2==f._2).getOrElse(("Nan",0))._1,f._1))
 
     coefficients.toList ::: List(("AUC",AUC))
+  }
+
+  /**
+    * Still Under Working.
+    * Another version of logistic regression using CrossValidator.
+    *
+    * @param patientrdd RDD of labeled data points
+    * @param IDMap A map that maps feature id and feature name.
+    * @return a list of features with highest weight, plus the AUC score.
+    * */
+  def trainLogisticWithCV(sqlContext:SQLContext,patientrdd: RDD[LabeledPoint],IDMap: scala.collection.Map[String, Long]): Unit ={
+    //patientrdd.cache()
+    import sqlContext.implicits._
+    val split = patientrdd.randomSplit(Array(0.9,0.1))
+    val training = split(0).zipWithIndex().map(f => (f._2,f._1.features,f._1.label)).toDF( "id","features", "label")
+    val test = split(1).zipWithIndex().map(f => (f._2,f._1.features)).toDF( "id","features")
+
+
+    val model = new LogisticRegression()
+
+    val paramGrid = new ParamGridBuilder()
+      .addGrid(model.regParam, Array(0.1, 0.01,0.001))
+      .build()
+
+    val cv = new CrossValidator()
+      .setEstimator(model)
+      .setEvaluator(new BinaryClassificationEvaluator)
+      .setEstimatorParamMaps(paramGrid)
+      .setNumFolds(3)
+
+    val cvModel=cv.fit(training)
+    val predictionAndLabels = cvModel.transform(test)
+      .select("id", "probability", "prediction")
+      .collect()
+
+
+    //still need to figure out how to get prediction predictions from the cross validated model
+
+
+
+
+
   }
 }
